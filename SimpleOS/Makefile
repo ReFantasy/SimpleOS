@@ -74,6 +74,7 @@ run :
 	$(MAKE) img
 	$(COPY) haribote.img ..\z_tools\qemu\fdimage0.bin
 	$(MAKE) -C ../z_tools/qemu
+	$(MAKE) src_only
 
 install :
 	$(MAKE) img

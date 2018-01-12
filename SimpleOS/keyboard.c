@@ -1,17 +1,16 @@
-/* é”®ç›˜ä¸­æ–­å¤„ç†å‡½æ•° */
+/* ƒL[ƒ{[ƒhŠÖŒW */
 
 #include "bootpack.h"
 
-struct FIFO8 keyfifo;  //å®šä¹‰é”®ç›˜æ•°æ®ç¼“å†²
+struct FIFO32 *keyfifo;
+int keydata0;
 
-void inthandler21(int *esp)  //PS/2é”®ç›˜çš„ä¸­æ–­
+void inthandler21(int *esp)
 {
-	unsigned char data;
-	io_out8(PIC0_OCW2, 0x61);	/* é€šçŸ¥PIC IRQ-01å·²ç»å—ç†å®Œæ¯• */
+	int data;
+	io_out8(PIC0_OCW2, 0x61);	/* IRQ-01ó•tŠ®—¹‚ğPIC‚É’Ê’m */
 	data = io_in8(PORT_KEYDAT);
-	
-	fifo8_put(&keyfifo,data);
-
+	fifo32_put(keyfifo, data + keydata0);
 	return;
 }
 
@@ -22,17 +21,21 @@ void inthandler21(int *esp)  //PS/2é”®ç›˜çš„ä¸­æ–­
 
 void wait_KBC_sendready(void)
 {
-	/* ç­‰å¾…é”®ç›˜æ§åˆ¶ç”µè·¯å‡†å¤‡å®Œæ¯• */
-	while(1) 
-	{
-		if ((io_in8(PORT_KEYSTA) & KEYSTA_SEND_NOTREADY) == 0) break;
+	/* ƒL[ƒ{[ƒhƒRƒ“ƒgƒ[ƒ‰‚ªƒf[ƒ^‘—M‰Â”\‚É‚È‚é‚Ì‚ğ‘Ò‚Â */
+	for (;;) {
+		if ((io_in8(PORT_KEYSTA) & KEYSTA_SEND_NOTREADY) == 0) {
+			break;
+		}
 	}
 	return;
 }
 
-void init_keyboard(void)
+void init_keyboard(struct FIFO32 *fifo, int data0)
 {
-	/* åˆå§‹åŒ–é”®ç›˜æ§åˆ¶ç”µè·¯ */
+	/* ‘‚«‚İæ‚ÌFIFOƒoƒbƒtƒ@‚ğ‹L‰¯ */
+	keyfifo = fifo;
+	keydata0 = data0;
+	/* ƒL[ƒ{[ƒhƒRƒ“ƒgƒ[ƒ‰‚Ì‰Šú‰» */
 	wait_KBC_sendready();
 	io_out8(PORT_KEYCMD, KEYCMD_WRITE_MODE);
 	wait_KBC_sendready();
