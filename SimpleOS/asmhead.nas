@@ -15,7 +15,7 @@ VRAM	EQU		0x0ff8			; 图像缓冲区首地址
 
 		ORG		0xc200			; 系统代码加载的地址
 		
-		MOV 	AL,0x13			; VGA显卡，320x200x8位彩色
+		MOV 		AL,0x13			; VGA显卡，320x200x8位彩色
 		MOV		AH,0x00
 		INT		0x10
 		MOV		BYTE [VMODE],8	; 画面模式
