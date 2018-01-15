@@ -8,8 +8,8 @@ void init_palette(void);
 void set_palette(int start, int end, unsigned char *rgb);
 void drawBox(unsigned char *vram, int xsize, unsigned char color, int x0, int y0, int x1, int y1);
 void init_screen(char *vram, int x, int y);
-void showCharacter(char *vram, int xsize, int x, int y, char color, char f);
-void showString(char *vram, int xsize, int x, int y, char c, unsigned char *s);
+void printCharacter(char *vram, int xsize, int x, int y, char color, char f);
+void printString(char *vram, int xsize, int x, int y, char c, unsigned char *s);
 
 #define COL8_000000		0
 #define COL8_FF0000		1
@@ -40,9 +40,9 @@ void HariMain(void)
 
 	init_palette();
 	init_screen(binfo->vram, binfo->scrnx, binfo->scrny);
-	showString(binfo->vram, binfo->scrnx, 8, 8, COL8_FFFFFF, "ABC 123");
-	showString(binfo->vram, binfo->scrnx, 31, 31, COL8_000000, "Haribote OS.");
-	showString(binfo->vram, binfo->scrnx, 30, 30, COL8_FFFFFF, "Haribote OS.");
+	printString(binfo->vram, binfo->scrnx, 8, 8, COL8_FFFFFF, "ABC 123");
+	printString(binfo->vram, binfo->scrnx, 31, 31, COL8_000000, "Haribote OS.");
+	printString(binfo->vram, binfo->scrnx, 30, 30, COL8_FFFFFF, "Haribote OS.");
 
 	for (;;) {
 		io_hlt();
@@ -122,7 +122,7 @@ void init_screen(char *vram, int x, int y)
 	return;
 }
 
-void showCharacter(char *vram, int xsize, int x, int y, char color, char f)
+void printCharacter(char *vram, int xsize, int x, int y, char color, char f)
 {
 	extern char hankaku[4096];
 	char *font = hankaku+f*16;
@@ -143,11 +143,11 @@ void showCharacter(char *vram, int xsize, int x, int y, char color, char f)
 	return;
 }
 
-void showString(char *vram, int xsize, int x, int y, char c, unsigned char *s)
+void printString(char *vram, int xsize, int x, int y, char c, unsigned char *s)
 {
 	extern char hankaku[4096];
 	for (; *s != 0x00; s++) {
-		showCharacter(vram, xsize, x, y, c, *s);
+		printCharacter(vram, xsize, x, y, c, *s);
 		x += 8;
 	}
 	return;
