@@ -3,7 +3,7 @@
 
 [INSTRSET "i486p"]
 
-VBEMODE	EQU		0x107			; 1024 x  768 x 8bit
+VBEMODE	EQU		0x105			; 1024 x  768 x 8bit
 ; （画面模式列表）
 ;	0x100 :  640 x  400 x 8bit
 ;	0x101 :  640 x  480 x 8bit

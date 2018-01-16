@@ -1,154 +1,208 @@
-void io_hlt(void);
-void io_cli(void);
-void io_out8(int port, int data);
-int io_load_eflags(void);
-void io_store_eflags(int eflags);
+/* bootpack‚ÌƒƒCƒ“ */
 
-void init_palette(void);
-void set_palette(int start, int end, unsigned char *rgb);
-void drawBox(unsigned char *vram, int xsize, unsigned char color, int x0, int y0, int x1, int y1);
-void init_screen(char *vram, int x, int y);
-void printCharacter(char *vram, int xsize, int x, int y, char color, char f);
-void printString(char *vram, int xsize, int x, int y, char c, unsigned char *s);
+#include "bootpack.h"
+#include <stdio.h>
 
-#define COL8_000000		0
-#define COL8_FF0000		1
-#define COL8_00FF00		2
-#define COL8_FFFF00		3
-#define COL8_0000FF		4
-#define COL8_FF00FF		5
-#define COL8_00FFFF		6
-#define COL8_FFFFFF		7
-#define COL8_C6C6C6		8
-#define COL8_840000		9
-#define COL8_008400		10
-#define COL8_848400		11
-#define COL8_000084		12
-#define COL8_840084		13
-#define COL8_008484		14
-#define COL8_848484		15
-
-struct BOOTINFO {
-	char cyls, leds, vmode, reserve;
-	short scrnx, scrny;
-	char *vram;
-};
+void make_window8(unsigned char *buf, int xsize, int ysize, char *title);
+void putfonts8_asc_sht(struct SHEET *sht, int x, int y, int c, int b, char *s, int l);
 
 void HariMain(void)
 {
-	struct BOOTINFO *binfo = (struct BOOTINFO *) 0x0ff0;
+	struct BOOTINFO *binfo = (struct BOOTINFO *) ADR_BOOTINFO;
+	struct FIFO32 fifo;
+	char s[40];
+	int fifobuf[128];
+	struct TIMER *timer, *timer2, *timer3;
+	int mx, my, i;
+	unsigned int memtotal;
+	struct MOUSE_DEC mdec;
+	struct MEMMAN *memman = (struct MEMMAN *) MEMMAN_ADDR;
+	struct SHTCTL *shtctl;
+	struct SHEET *sht_back, *sht_mouse, *sht_win;
+	unsigned char *buf_back, buf_mouse[256], *buf_win;
+	static char keytable[0x54] = {
+		0,   0,   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', 0,   0,
+		'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '@', '[', 0,   0,   'A', 'S',
+		'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', ':', 0,   0,   ']', 'Z', 'X', 'C', 'V',
+		'B', 'N', 'M', ',', '.', '/', 0,   '*', 0,   ' ', 0,   0,   0,   0,   0,   0,
+		0,   0,   0,   0,   0,   0,   0,   '7', '8', '9', '-', '4', '5', '6', '+', '1',
+		'2', '3', '0', '.'
+	};
+
+	init_gdtidt();
+	init_pic();
+	io_sti(); /* IDT/PIC‚Ì‰Šú‰»‚ªI‚í‚Á‚½‚Ì‚ÅCPU‚ÌŠ„‚è‚İ‹Ö~‚ğ‰ğœ */
+	fifo32_init(&fifo, 128, fifobuf);
+	init_pit();
+	init_keyboard(&fifo, 256);
+	enable_mouse(&fifo, 512, &mdec);
+	io_out8(PIC0_IMR, 0xf8); /* PIT‚ÆPIC1‚ÆƒL[ƒ{[ƒh‚ğ‹–‰Â(11111000) */
+	io_out8(PIC1_IMR, 0xef); /* ƒ}ƒEƒX‚ğ‹–‰Â(11101111) */
+
+	timer = timer_alloc();
+	timer_init(timer, &fifo, 10);
+	timer_settime(timer, 1000);
+	timer2 = timer_alloc();
+	timer_init(timer2, &fifo, 3);
+	timer_settime(timer2, 300);
+	timer3 = timer_alloc();
+	timer_init(timer3, &fifo, 1);
+	timer_settime(timer3, 50);
+
+	memtotal = memtest(0x00400000, 0xbfffffff);
+	memman_init(memman);
+	memman_free(memman, 0x00001000, 0x0009e000); /* 0x00001000 - 0x0009efff */
+	memman_free(memman, 0x00400000, memtotal - 0x00400000);
 
 	init_palette();
-	init_screen(binfo->vram, binfo->scrnx, binfo->scrny);
-	printString(binfo->vram, binfo->scrnx, 8, 8, COL8_FFFFFF, "ABC 123");
-	printString(binfo->vram, binfo->scrnx, 31, 31, COL8_000000, "Haribote OS.");
-	printString(binfo->vram, binfo->scrnx, 30, 30, COL8_FFFFFF, "Haribote OS.");
+	shtctl = shtctl_init(memman, binfo->vram, binfo->scrnx, binfo->scrny);
+	sht_back  = sheet_alloc(shtctl);
+	sht_mouse = sheet_alloc(shtctl);
+	sht_win   = sheet_alloc(shtctl);
+	buf_back  = (unsigned char *) memman_alloc_4k(memman, binfo->scrnx * binfo->scrny);
+	buf_win   = (unsigned char *) memman_alloc_4k(memman, 160 * 52);
+	sheet_setbuf(sht_back, buf_back, binfo->scrnx, binfo->scrny, -1); /* “§–¾F‚È‚µ */
+	sheet_setbuf(sht_mouse, buf_mouse, 16, 16, 99);
+	sheet_setbuf(sht_win, buf_win, 160, 52, -1); /* “§–¾F‚È‚µ */
+	init_screen8(buf_back, binfo->scrnx, binfo->scrny);
+	init_mouse_cursor8(buf_mouse, 99);
+	make_window8(buf_win, 160, 52, "window");
+	sheet_slide(sht_back, 0, 0);
+	mx = (binfo->scrnx - 16) / 2; /* ‰æ–Ê’†‰›‚É‚È‚é‚æ‚¤‚ÉÀ•WŒvZ */
+	my = (binfo->scrny - 28 - 16) / 2;
+	sheet_slide(sht_mouse, mx, my);
+	sheet_slide(sht_win, 80, 72);
+	sheet_updown(sht_back,  0);
+	sheet_updown(sht_win,   1);
+	sheet_updown(sht_mouse, 2);
+	sprintf(s, "(%3d, %3d)", mx, my);
+	putfonts8_asc_sht(sht_back, 0, 0, COL8_FFFFFF, COL8_008484, s, 10);
+	sprintf(s, "memory %dMB   free : %dKB",
+			memtotal / (1024 * 1024), memman_total(memman) / 1024);
+	putfonts8_asc_sht(sht_back, 0, 32, COL8_FFFFFF, COL8_008484, s, 40);
 
 	for (;;) {
-		io_hlt();
+		io_cli();
+		if (fifo32_status(&fifo) == 0) {
+			io_stihlt();
+		} else {
+			i = fifo32_get(&fifo);
+			io_sti();
+			if (256 <= i && i <= 511) { /* ƒL[ƒ{[ƒhƒf[ƒ^ */
+				sprintf(s, "%02X", i - 256);
+				putfonts8_asc_sht(sht_back, 0, 16, COL8_FFFFFF, COL8_008484, s, 2);
+				if (i < 256 + 0x54) {
+					if (keytable[i - 256] != 0) {
+						s[0] = keytable[i - 256];
+						s[1] = 0;
+						putfonts8_asc_sht(sht_win, 40, 28, COL8_000000, COL8_C6C6C6, s, 1);
+					}
+				}
+			} else if (512 <= i && i <= 767) { /* ƒ}ƒEƒXƒf[ƒ^ */
+				if (mouse_decode(&mdec, i - 512) != 0) {
+					/* ƒf[ƒ^‚ª3ƒoƒCƒg‘µ‚Á‚½‚Ì‚Å•\¦ */
+					sprintf(s, "[lcr %4d %4d]", mdec.x, mdec.y);
+					if ((mdec.btn & 0x01) != 0) {
+						s[1] = 'L';
+					}
+					if ((mdec.btn & 0x02) != 0) {
+						s[3] = 'R';
+					}
+					if ((mdec.btn & 0x04) != 0) {
+						s[2] = 'C';
+					}
+					putfonts8_asc_sht(sht_back, 32, 16, COL8_FFFFFF, COL8_008484, s, 15);
+					/* ƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ÌˆÚ“® */
+					mx += mdec.x;
+					my += mdec.y;
+					if (mx < 0) {
+						mx = 0;
+					}
+					if (my < 0) {
+						my = 0;
+					}
+					if (mx > binfo->scrnx - 1) {
+						mx = binfo->scrnx - 1;
+					}
+					if (my > binfo->scrny - 1) {
+						my = binfo->scrny - 1;
+					}
+					sprintf(s, "(%3d, %3d)", mx, my);
+					putfonts8_asc_sht(sht_back, 0, 0, COL8_FFFFFF, COL8_008484, s, 10);
+					sheet_slide(sht_mouse, mx, my);
+				}
+			} else if (i == 10) { /* 10•bƒ^ƒCƒ} */
+				putfonts8_asc_sht(sht_back, 0, 64, COL8_FFFFFF, COL8_008484, "10[sec]", 7);
+			} else if (i == 3) { /* 3•bƒ^ƒCƒ} */
+				putfonts8_asc_sht(sht_back, 0, 80, COL8_FFFFFF, COL8_008484, "3[sec]", 6);
+			} else if (i == 1) { /* ƒJ[ƒ\ƒ‹—pƒ^ƒCƒ} */
+				timer_init(timer3, &fifo, 0); /* Ÿ‚Í0‚ğ */
+				boxfill8(buf_back, binfo->scrnx, COL8_FFFFFF, 8, 96, 15, 111);
+				timer_settime(timer3, 50);
+				sheet_refresh(sht_back, 8, 96, 16, 112);
+			} else if (i == 0) { /* ƒJ[ƒ\ƒ‹—pƒ^ƒCƒ} */
+				timer_init(timer3, &fifo, 1); /* Ÿ‚Í1‚ğ */
+				boxfill8(buf_back, binfo->scrnx, COL8_008484, 8, 96, 15, 111);
+				timer_settime(timer3, 50);
+				sheet_refresh(sht_back, 8, 96, 16, 112);
+			}
+		}
 	}
 }
 
-void init_palette(void)
+void make_window8(unsigned char *buf, int xsize, int ysize, char *title)
 {
-	static unsigned char table_rgb[16 * 3] = {
-		0x00, 0x00, 0x00,	/*  0:é»’ */
-		0xff, 0x00, 0x00,	/*  1:æ˜ã‚‹ã„èµ¤ */
-		0x00, 0xff, 0x00,	/*  2:æ˜ã‚‹ã„ç·‘ */
-		0xff, 0xff, 0x00,	/*  3:æ˜ã‚‹ã„é»„è‰² */
-		0x00, 0x00, 0xff,	/*  4:æ˜ã‚‹ã„é’ */
-		0xff, 0x00, 0xff,	/*  5:æ˜ã‚‹ã„ç´« */
-		0x00, 0xff, 0xff,	/*  6:æ˜ã‚‹ã„æ°´è‰² */
-		0xff, 0xff, 0xff,	/*  7:ç™½ */
-		0xc6, 0xc6, 0xc6,	/*  8:æ˜ã‚‹ã„ç°è‰² */
-		0x84, 0x00, 0x00,	/*  9:æš—ã„èµ¤ */
-		0x00, 0x84, 0x00,	/* 10:æš—ã„ç·‘ */
-		0x84, 0x84, 0x00,	/* 11:æš—ã„é»„è‰² */
-		0x00, 0x00, 0x84,	/* 12:æš—ã„é’ */
-		0x84, 0x00, 0x84,	/* 13:æš—ã„ç´« */
-		0x00, 0x84, 0x84,	/* 14:æš—ã„æ°´è‰² */
-		0x84, 0x84, 0x84	/* 15:æš—ã„ç°è‰² */
+	static char closebtn[14][16] = {
+		"OOOOOOOOOOOOOOO@",
+		"OQQQQQQQQQQQQQ$@",
+		"OQQQQQQQQQQQQQ$@",
+		"OQQQ@@QQQQ@@QQ$@",
+		"OQQQQ@@QQ@@QQQ$@",
+		"OQQQQQ@@@@QQQQ$@",
+		"OQQQQQQ@@QQQQQ$@",
+		"OQQQQQ@@@@QQQQ$@",
+		"OQQQQ@@QQ@@QQQ$@",
+		"OQQQ@@QQQQ@@QQ$@",
+		"OQQQQQQQQQQQQQ$@",
+		"OQQQQQQQQQQQQQ$@",
+		"O$$$$$$$$$$$$$$@",
+		"@@@@@@@@@@@@@@@@"
 	};
-	set_palette(0, 15, table_rgb);
-	return;
-
-}
-
-void set_palette(int start, int end, unsigned char *rgb)
-{
-	int i, eflags;
-	eflags = io_load_eflags();	/* è¯»å–ä¸­æ–­æ ‡å¿—*/
-	io_cli(); 					/* å…³é—­ä¸­æ–­*/
-	io_out8(0x03c8, start);
-	for (i = start; i <= end; i++)
-	{
-		io_out8(0x03c9, rgb[0] / 4);//R
-		io_out8(0x03c9, rgb[1] / 4);//G
-		io_out8(0x03c9, rgb[2] / 4);//B
-		rgb += 3;
-	}
-	io_store_eflags(eflags);	/* æ‰“å¼€ä¸­æ–­ */
-	return;
-}
-
-void drawBox(unsigned char *vram, int xsize, unsigned char color, int x0, int y0, int x1, int y1)
-{
 	int x, y;
-	for (y = y0; y <= y1; y++) {
-		for (x = x0; x <= x1; x++)
-			vram[y * xsize + x] = color;
+	char c;
+	boxfill8(buf, xsize, COL8_C6C6C6, 0,         0,         xsize - 1, 0        );
+	boxfill8(buf, xsize, COL8_FFFFFF, 1,         1,         xsize - 2, 1        );
+	boxfill8(buf, xsize, COL8_C6C6C6, 0,         0,         0,         ysize - 1);
+	boxfill8(buf, xsize, COL8_FFFFFF, 1,         1,         1,         ysize - 2);
+	boxfill8(buf, xsize, COL8_848484, xsize - 2, 1,         xsize - 2, ysize - 2);
+	boxfill8(buf, xsize, COL8_000000, xsize - 1, 0,         xsize - 1, ysize - 1);
+	boxfill8(buf, xsize, COL8_C6C6C6, 2,         2,         xsize - 3, ysize - 3);
+	boxfill8(buf, xsize, COL8_000084, 3,         3,         xsize - 4, 20       );
+	boxfill8(buf, xsize, COL8_848484, 1,         ysize - 2, xsize - 2, ysize - 2);
+	boxfill8(buf, xsize, COL8_000000, 0,         ysize - 1, xsize - 1, ysize - 1);
+	putfonts8_asc(buf, xsize, 24, 4, COL8_FFFFFF, title);
+	for (y = 0; y < 14; y++) {
+		for (x = 0; x < 16; x++) {
+			c = closebtn[y][x];
+			if (c == '@') {
+				c = COL8_000000;
+			} else if (c == '$') {
+				c = COL8_848484;
+			} else if (c == 'Q') {
+				c = COL8_C6C6C6;
+			} else {
+				c = COL8_FFFFFF;
+			}
+			buf[(5 + y) * xsize + (xsize - 21 + x)] = c;
+		}
 	}
 	return;
 }
 
-void init_screen(char *vram, int x, int y)
+void putfonts8_asc_sht(struct SHEET *sht, int x, int y, int c, int b, char *s, int l)
 {
-	drawBox(vram, x, COL8_008484,  0,     0,      x -  1, y - 29);
-	drawBox(vram, x, COL8_C6C6C6,  0,     y - 28, x -  1, y - 28);
-	drawBox(vram, x, COL8_FFFFFF,  0,     y - 27, x -  1, y - 27);
-	drawBox(vram, x, COL8_C6C6C6,  0,     y - 26, x -  1, y -  1);
-
-	drawBox(vram, x, COL8_FFFFFF,  3,     y - 24, 59,     y - 24);
-	drawBox(vram, x, COL8_FFFFFF,  2,     y - 24,  2,     y -  4);
-	drawBox(vram, x, COL8_848484,  3,     y -  4, 59,     y -  4);
-	drawBox(vram, x, COL8_848484, 59,     y - 23, 59,     y -  5);
-	drawBox(vram, x, COL8_000000,  2,     y -  3, 59,     y -  3);
-	drawBox(vram, x, COL8_000000, 60,     y - 24, 60,     y -  3);
-
-	drawBox(vram, x, COL8_848484, x - 47, y - 24, x -  4, y - 24);
-	drawBox(vram, x, COL8_848484, x - 47, y - 23, x - 47, y -  4);
-	drawBox(vram, x, COL8_FFFFFF, x - 47, y -  3, x -  4, y -  3);
-	drawBox(vram, x, COL8_FFFFFF, x -  3, y - 24, x -  3, y -  3);
-	return;
-}
-
-void printCharacter(char *vram, int xsize, int x, int y, char color, char f)
-{
-	extern char hankaku[4096];
-	char *font = hankaku+f*16;
-	int i;
-	char *p, d /* data */;
-	for (i = 0; i < 16; i++) {
-		p = vram + (y + i) * xsize + x;
-		d = font[i];
-		if ((d & 0x80) != 0) { p[0] = color; }
-		if ((d & 0x40) != 0) { p[1] = color; }
-		if ((d & 0x20) != 0) { p[2] = color; }
-		if ((d & 0x10) != 0) { p[3] = color; }
-		if ((d & 0x08) != 0) { p[4] = color; }
-		if ((d & 0x04) != 0) { p[5] = color; }
-		if ((d & 0x02) != 0) { p[6] = color; }
-		if ((d & 0x01) != 0) { p[7] = color; }
-	}
-	return;
-}
-
-void printString(char *vram, int xsize, int x, int y, char c, unsigned char *s)
-{
-	extern char hankaku[4096];
-	for (; *s != 0x00; s++) {
-		printCharacter(vram, xsize, x, y, c, *s);
-		x += 8;
-	}
+	boxfill8(sht->buf, sht->bxsize, b, x, y, x + l * 8 - 1, y + 15);
+	putfonts8_asc(sht->buf, sht->bxsize, x, y, c, s);
+	sheet_refresh(sht, x, y, x + l * 8, y + 16);
 	return;
 }
