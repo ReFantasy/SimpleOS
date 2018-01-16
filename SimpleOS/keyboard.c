@@ -2,15 +2,14 @@
 
 #include "bootpack.h"
 
-struct FIFO32 *keyfifo;
-int keydata0;
+struct FIFO8 keyfifo;
 
 void inthandler21(int *esp)
 {
-	int data;
+	unsigned char data;
 	io_out8(PIC0_OCW2, 0x61);	/* IRQ-01受付完了をPICに通知 */
 	data = io_in8(PORT_KEYDAT);
-	fifo32_put(keyfifo, data + keydata0);
+	fifo8_put(&keyfifo, data);
 	return;
 }
 
@@ -30,11 +29,8 @@ void wait_KBC_sendready(void)
 	return;
 }
 
-void init_keyboard(struct FIFO32 *fifo, int data0)
+void init_keyboard(void)
 {
-	/* 書き込み先のFIFOバッファを記憶 */
-	keyfifo = fifo;
-	keydata0 = data0;
 	/* キーボードコントローラの初期化 */
 	wait_KBC_sendready();
 	io_out8(PORT_KEYCMD, KEYCMD_WRITE_MODE);

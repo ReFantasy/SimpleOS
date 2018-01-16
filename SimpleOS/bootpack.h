@@ -1,12 +1,10 @@
 /* asmhead.nas */
-struct BOOTINFO
-{
-	/* 0x0ff0-0x0fff */
-	char cyls;
-	char leds;
-	char vmode;
+struct BOOTINFO { /* 0x0ff0-0x0fff */
+	char cyls; /* �u�[�g�Z�N�^�͂ǂ��܂Ńf�B�X�N��ǂ񂾂̂� */
+	char leds; /* �u�[�g���̃L�[�{�[�h��LED�̏�� */
+	char vmode; /* �r�f�I���[�h  ���r�b�g�J���[�� */
 	char reserve;
-	short scrnx, scrny; /* 画面解像度 */
+	short scrnx, scrny; /* ��ʉ𑜓x */
 	char *vram;
 };
 #define ADR_BOOTINFO	0x00000ff0
@@ -31,35 +29,25 @@ void asm_inthandler2c(void);
 unsigned int memtest_sub(unsigned int start, unsigned int end);
 
 /* fifo.c */
-// struct FIFO8
-// {
-	// unsigned char *buf;
-	// int p, q, size, free, flags;
-// };
-// void fifo8_init(struct FIFO8 *fifo, int size, unsigned char *buf);
-// int fifo8_put(struct FIFO8 *fifo, unsigned char data);
-// int fifo8_get(struct FIFO8 *fifo);
-// int fifo8_status(struct FIFO8 *fifo);
-
-struct FIFO32 {
-	int *buf;
+struct FIFO8 {
+	unsigned char *buf;
 	int p, q, size, free, flags;
 };
-void fifo32_init(struct FIFO32 *fifo, int size, int *buf);
-int fifo32_put(struct FIFO32 *fifo, int data);
-int fifo32_get(struct FIFO32 *fifo);
-int fifo32_status(struct FIFO32 *fifo);
+void fifo8_init(struct FIFO8 *fifo, int size, unsigned char *buf);
+int fifo8_put(struct FIFO8 *fifo, unsigned char data);
+int fifo8_get(struct FIFO8 *fifo);
+int fifo8_status(struct FIFO8 *fifo);
 
 /* graphic.c */
-void init_palette(void);  //初始化调色板
-void set_palette(int start, int end, unsigned char *rgb);  //设定调色板
-void boxfill8(unsigned char *vram, int xsize, unsigned char color, int x1, int y1, int x2, int y2);  //画矩形
-void init_screen8(char *vram, int x, int y);  //初始化桌面
-void putfont8(char *vram, int xsize, int x, int y, char font_color, char *character_addr);  //显示字符
-void putfonts8_asc(char *vram, int xsize, int x, int y, char font_color, unsigned char *str);  //显示字符串
-void init_mouse_cursor8(char *mouse, char bc);  //初始化鼠标
+void init_palette(void);
+void set_palette(int start, int end, unsigned char *rgb);
+void boxfill8(unsigned char *vram, int xsize, unsigned char c, int x0, int y0, int x1, int y1);
+void init_screen8(char *vram, int x, int y);
+void putfont8(char *vram, int xsize, int x, int y, char c, char *font);
+void putfonts8_asc(char *vram, int xsize, int x, int y, char c, unsigned char *s);
+void init_mouse_cursor8(char *mouse, char bc);
 void putblock8_8(char *vram, int vxsize, int pxsize,
-                 int pysize, int px0, int py0, char *buf, int bxsize);
+	int pysize, int px0, int py0, char *buf, int bxsize);
 #define COL8_000000		0
 #define COL8_FF0000		1
 #define COL8_00FF00		2
@@ -78,14 +66,12 @@ void putblock8_8(char *vram, int vxsize, int pxsize,
 #define COL8_848484		15
 
 /* dsctbl.c */
-struct SEGMENT_DESCRIPTOR
-{
+struct SEGMENT_DESCRIPTOR {
 	short limit_low, base_low;
 	char base_mid, access_right;
 	char limit_high, base_high;
 };
-struct GATE_DESCRIPTOR
-{
+struct GATE_DESCRIPTOR {
 	short offset_low, selector;
 	char dw_count, access_right;
 	short offset_high;
@@ -96,17 +82,16 @@ void set_gatedesc(struct GATE_DESCRIPTOR *gd, int offset, int selector, int ar);
 #define ADR_IDT			0x0026f800
 #define LIMIT_IDT		0x000007ff
 #define ADR_GDT			0x00270000
-#define LIMIT_GDT		0x0000ffff  //16位段寄存器最大可表示ffff
+#define LIMIT_GDT		0x0000ffff
 #define ADR_BOTPAK		0x00280000
 #define LIMIT_BOTPAK	0x0007ffff
-#define AR_DATA32_RW	0x4092  //设置段为32位模式()，系统专用，可读可写，不可执行
-#define AR_CODE32_ER	0x409a  //设置段为32位模式()，系统专用，可读不可写，可执行
+#define AR_DATA32_RW	0x4092
+#define AR_CODE32_ER	0x409a
 #define AR_INTGATE32	0x008e
 
 /* int.c */
 void init_pic(void);
 void inthandler27(int *esp);
-//PIC中的寄存器端口号
 #define PIC0_ICW1		0x0020
 #define PIC0_OCW2		0x0020
 #define PIC0_IMR		0x0021
@@ -123,30 +108,28 @@ void inthandler27(int *esp);
 /* keyboard.c */
 void inthandler21(int *esp);
 void wait_KBC_sendready(void);
-void init_keyboard(struct FIFO32 *fifo, int data0);
+void init_keyboard(void);
+extern struct FIFO8 keyfifo;
 #define PORT_KEYDAT		0x0060
 #define PORT_KEYCMD		0x0064
 
 /* mouse.c */
-struct MOUSE_DEC
-{
+struct MOUSE_DEC {
 	unsigned char buf[3], phase;
 	int x, y, btn;
 };
 void inthandler2c(int *esp);
-void enable_mouse(struct FIFO32 *fifo, int data0, struct MOUSE_DEC *mdec);
+void enable_mouse(struct MOUSE_DEC *mdec);
 int mouse_decode(struct MOUSE_DEC *mdec, unsigned char dat);
+extern struct FIFO8 mousefifo;
 
 /* memory.c */
-#define MEMMAN_FREES		4090	/* 内存管理数组元素个数 */
+#define MEMMAN_FREES		4090	/* ����Ŗ�32KB */
 #define MEMMAN_ADDR			0x003c0000
-struct FREEINFO //可用内存段信息
-{
+struct FREEINFO {	/* ������� */
 	unsigned int addr, size;
 };
-
-struct MEMMAN //内存管理结构体
-{
+struct MEMMAN {		/* �������Ǘ� */
 	int frees, maxfrees, lostsize, losts;
 	struct FREEINFO free[MEMMAN_FREES];
 };
@@ -159,18 +142,14 @@ unsigned int memman_alloc_4k(struct MEMMAN *man, unsigned int size);
 int memman_free_4k(struct MEMMAN *man, unsigned int addr, unsigned int size);
 
 /* sheet.c */
-#define MAX_SHEETS		256  //图层（窗口）最大个数
-//图层
-struct SHEET
-{
+#define MAX_SHEETS		256
+struct SHEET {
 	unsigned char *buf;
-	struct SHTCTL *ctl;
 	int bxsize, bysize, vx0, vy0, col_inv, height, flags;
+	struct SHTCTL *ctl;
 };
-//图层管理
-struct SHTCTL
-{
-	unsigned char *vram, *map;  //显存地址
+struct SHTCTL {
+	unsigned char *vram, *map;
 	int xsize, ysize, top;
 	struct SHEET *sheets[MAX_SHEETS];
 	struct SHEET sheets0[MAX_SHEETS];
@@ -184,39 +163,5 @@ void sheet_slide(struct SHEET *sht, int vx0, int vy0);
 void sheet_free(struct SHEET *sht);
 
 /* timer.c */
-#define MAX_TIMER		500
-struct TIMER 
-{
-	struct TIMER *next;
-	unsigned int timeout, flags;
-	struct FIFO32 *fifo;
-	int data;
-};
-struct TIMERCTL 
-{
-	unsigned int count, next;
-	struct TIMER *t0;
-	struct TIMER timers0[MAX_TIMER];
-};
-extern struct TIMERCTL timerctl;
 void init_pit(void);
-struct TIMER *timer_alloc(void);
-void timer_free(struct TIMER *timer);
-void timer_init(struct TIMER *timer, struct FIFO32 *fifo, int data);
-void timer_settime(struct TIMER *timer, unsigned int timeout);
 void inthandler20(int *esp);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
